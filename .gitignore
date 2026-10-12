@@ -1,5 +1,6 @@
 # Maven build output
 target/
+dist/
 
 # Environment variables and secrets
 .env

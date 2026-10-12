@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.nio.file.Path;
 
 public class JamendoCatalog {
 
@@ -29,10 +30,26 @@ public class JamendoCatalog {
     private final HttpClient httpClient;
 
     // Creates the Jamendo API client and checks that the API key exists.
-    // Initializes the Jamendo API client using the environment or local .env file.
+    
+    // Loads the Jamendo client ID from the environment, user configuration, or local .env file.
     public JamendoCatalog() {
         String configuredClientId = System.getenv("JAMENDO_CLIENT_ID");
 
+        // Checks the user's permanent configuration directory first.
+        if (configuredClientId == null || configuredClientId.isBlank()) {
+            Dotenv userConfig = Dotenv.configure()
+                    .directory(Path.of(
+                            System.getProperty("user.home"),
+                            ".config",
+                            "auralis"
+                    ).toString())
+                    .ignoreIfMissing()
+                    .load();
+
+            configuredClientId = userConfig.get("JAMENDO_CLIENT_ID");
+        }
+
+        // Falls back to the project's .env file during development.
         if (configuredClientId == null || configuredClientId.isBlank()) {
             configuredClientId = Dotenv.configure()
                     .ignoreIfMissing()
@@ -42,7 +59,8 @@ public class JamendoCatalog {
 
         if (configuredClientId == null || configuredClientId.isBlank()) {
             throw new IllegalStateException(
-                    "JAMENDO_CLIENT_ID is missing. Add it to your .env file.");
+                    "JAMENDO_CLIENT_ID is missing. Configure it in ~/.config/auralis/.env"
+            );
         }
 
         this.clientId = configuredClientId;
@@ -53,22 +71,18 @@ public class JamendoCatalog {
                 .build();
     }
 
-    // Fetches tracks from Jamendo asynchronously without blocking the JavaFX
-    // interface.
+    
+    // Fetches a page of Jamendo tracks and optionally filters by search text.
     public CompletableFuture<List<Song>> fetchTracks(int offset, String searchQuery) {
         StringBuilder url = new StringBuilder(API_URL)
                 .append("?client_id=").append(encode(clientId))
                 .append("&format=json")
                 .append("&limit=").append(PAGE_SIZE)
                 .append("&offset=").append(Math.max(0, offset))
-                .append("&imagesize=500")
                 .append("&audioformat=mp32");
 
         if (searchQuery != null && !searchQuery.isBlank()) {
             url.append("&search=").append(encode(searchQuery.trim()));
-        } else {
-            // Popular tracks first, so the landing page shows well-known songs.
-            url.append("&order=popularity_total");
         }
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -86,6 +100,7 @@ public class JamendoCatalog {
                     }
 
                     List<Song> tracks = parseTracks(response.body());
+
                     System.out.println(
                             "Jamendo returned " + tracks.size()
                                     + " usable tracks at offset " + offset);
